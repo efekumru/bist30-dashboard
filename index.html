@@ -46,9 +46,9 @@
     }
     .hero h1 .c { color: var(--cyan); }
     .hero h1 .b { color: var(--blue); }
-    .hero p { font-size: 15px; color: var(--muted); line-height: 1.6; max-width: 480px; margin-bottom: 36px; }
+    .hero p { font-size: 15px; color: var(--muted); line-height: 1.6; max-width: 520px; }
 
-    .summary { display: flex; gap: 12px; padding: 0 60px 40px; flex-wrap: wrap; }
+    .summary { display: flex; gap: 12px; padding: 40px 60px; flex-wrap: wrap; }
     .pill {
       display: flex; align-items: center; gap: 14px;
       background: var(--surface); border: 1px solid var(--border);
@@ -71,7 +71,7 @@
     .f-btn {
       background: transparent; border: 1px solid var(--border); color: var(--muted);
       font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
-      padding: 7px 16px; border-radius: 6px; cursor: pointer; transition: all .15s; letter-spacing: 0.3px;
+      padding: 7px 16px; border-radius: 6px; cursor: pointer; transition: all .15s;
     }
     .f-btn:hover { border-color: var(--cyan); color: var(--cyan); }
     .f-btn.active       { background: var(--cyan);   border-color: var(--cyan);   color: #0e0e10; }
@@ -82,15 +82,18 @@
     .update-info b { color: var(--cyan); }
 
     .list-wrap { padding: 0 60px 80px; }
+
     .list-header {
-      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
       padding: 10px 20px; font-size: 11px; color: var(--muted);
       letter-spacing: 0.8px; text-transform: uppercase;
       border-bottom: 1px solid var(--border); margin-bottom: 4px;
     }
 
     .stock-row {
-      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
       align-items: center; padding: 16px 20px;
       border-bottom: 1px solid var(--dim); border-radius: 8px;
       transition: background .12s;
@@ -115,9 +118,13 @@
     .sig-badge.SAT::before { background: var(--red); }
     .sig-badge.TUT { background:rgba(245,200,66,.1);  color:var(--yellow);border:1px solid rgba(245,200,66,.25); }
     .sig-badge.TUT::before { background: var(--yellow); }
-    .sig-badge.NA, .sig-badge.ERR { background:rgba(107,107,126,.1); color:var(--muted); border:1px solid rgba(107,107,126,.2); }
+    .sig-badge.NA, .sig-badge.ERR {
+      background:rgba(107,107,126,.1); color:var(--muted);
+      border:1px solid rgba(107,107,126,.2);
+    }
     .sig-badge.NA::before, .sig-badge.ERR::before { background: var(--muted); }
 
+    /* wave */
     .wave-inner { display: flex; flex-direction: column; gap: 5px; }
     .wave-val { font-size: 13px; font-weight: 500; }
     .wave-val.low  { color: var(--green); }
@@ -126,6 +133,17 @@
     .wave-val.na   { color: var(--muted); }
     .wave-track { width: 72px; height: 3px; background: var(--dim); border-radius: 2px; overflow: hidden; }
     .wave-fill  { height: 100%; border-radius: 2px; }
+
+    /* slope */
+    .slope-block { display: flex; flex-direction: column; gap: 3px; }
+    .slope-dir {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px; font-weight: 600;
+    }
+    .slope-dir.pos { color: var(--green); }
+    .slope-dir.neg { color: var(--red); }
+    .slope-dir.zero { color: var(--muted); }
+    .slope-num { font-size: 11px; color: var(--muted); }
 
     .metric { font-size: 13px; }
     .metric.pos { color: var(--green); }
@@ -152,7 +170,7 @@
 
 <div class="hero">
   <h1>BIST30 <span class="c">Wave</span><br><span class="b">Sinyalleri.</span></h1>
-  <p>Z-Score tabanlı wave stratejisi ile optimize edilmiş AL / SAT / TUT sinyalleri. Her gün otomatik güncellenir.</p>
+  <p>Eğim yönü + wave değerine göre AL / SAT / TUT sinyalleri. Her gün otomatik güncellenir.</p>
 </div>
 
 <div class="summary">
@@ -182,8 +200,8 @@
   <div class="list-header">
     <span>Sembol</span>
     <span>Sinyal</span>
-    <span class="h-wave">Wave</span>
-    <span>Net Kâr</span>
+    <span class="h-wave">Wave Değeri</span>
+    <span>Eğim</span>
     <span class="h-sharpe">Sharpe</span>
   </div>
   <div id="listBody">
@@ -216,16 +234,27 @@ function fNum(v, dec=0) {
 function waveClass(v) {
   const n = parseFloat(v);
   if (isNaN(n)) return 'na';
-  if (n <= -5) return 'low';
-  if (n >= 5)  return 'high';
+  if (n < 0) return 'low';
+  if (n > 0) return 'high';
   return 'mid';
+}
+
+function slopeBlock(slope) {
+  const n = parseFloat(slope);
+  if (isNaN(n)) return '<span class="metric na">—</span>';
+  const cls   = n > 0 ? 'pos' : n < 0 ? 'neg' : 'zero';
+  const arrow = n > 0 ? '↑ Pozitif' : n < 0 ? '↓ Negatif' : '→ Nötr';
+  return `<div class="slope-block">
+    <span class="slope-dir ${cls}">${arrow}</span>
+    <span class="slope-num">${n.toFixed(4)}</span>
+  </div>`;
 }
 
 function render() {
   let rows = activeFilter === 'ALL' ? [...allRows] : allRows.filter(r => r.Signal === activeFilter);
   rows.sort((a,b) => {
     const d = (SIG_ORDER[a.Signal]??9) - (SIG_ORDER[b.Signal]??9);
-    return d !== 0 ? d : (parseFloat(b.NetProfit)||0) - (parseFloat(a.NetProfit)||0);
+    return d !== 0 ? d : (parseFloat(b.Sharpe)||0) - (parseFloat(a.Sharpe)||0);
   });
 
   if (!rows.length) {
@@ -234,16 +263,14 @@ function render() {
   }
 
   document.getElementById('listBody').innerHTML = rows.map((r, i) => {
-    const sig = r.Signal || 'NA';
-    const wave = parseFloat(r.Wave);
-    const pct = isNaN(wave) ? 50 : Math.min(Math.max((wave+10)/20*100,0),100);
-    const wColor = wave<=-5?'var(--green)':wave>=5?'var(--red)':'var(--yellow)';
-    const profit = parseFloat(r.NetProfit);
-    const profitStr = isNaN(profit)?'—':`${profit>=0?'+':''}${fNum(r.NetProfit,0)} ₺`;
-    const pClass = isNaN(profit)?'na':profit>=0?'pos':'neg';
+    const sig   = r.Signal || 'NA';
+    const wave  = parseFloat(r.Wave);
+    const pct   = isNaN(wave) ? 50 : Math.min(Math.max((wave + 10) / 20 * 100, 0), 100);
+    const wColor = wave < 0 ? 'var(--green)' : wave > 0 ? 'var(--red)' : 'var(--yellow)';
     const sharpe = parseFloat(r.Sharpe);
-    const sClass = isNaN(sharpe)?'na':sharpe>=1.5?'pos':sharpe<0.5?'neg':'';
+    const sClass = isNaN(sharpe) ? 'na' : sharpe >= 1.5 ? 'pos' : sharpe < 0.5 ? 'neg' : '';
     const sym = (r.Symbol||'').replace('.IS','');
+
     return `
     <div class="stock-row" style="animation-delay:${i*16}ms">
       <div class="sym-block">
@@ -252,11 +279,11 @@ function render() {
       </div>
       <div><span class="sig-badge ${sig}">${sig}</span></div>
       <div class="wave-inner">
-        <span class="wave-val ${waveClass(r.Wave)}">${isNaN(wave)?'—':wave.toFixed(2)}</span>
+        <span class="wave-val ${waveClass(r.Wave)}">${isNaN(wave) ? '—' : wave.toFixed(3)}</span>
         <div class="wave-track"><div class="wave-fill" style="width:${pct}%;background:${wColor}"></div></div>
       </div>
-      <div><span class="metric ${pClass}">${profitStr}</span></div>
-      <div class="col-sharpe"><span class="metric ${sClass}">${isNaN(sharpe)?'—':fNum(r.Sharpe,2)}</span></div>
+      <div>${slopeBlock(r.Slope)}</div>
+      <div class="col-sharpe"><span class="metric ${sClass}">${isNaN(sharpe) ? '—' : fNum(r.Sharpe, 2)}</span></div>
     </div>`;
   }).join('');
 }
