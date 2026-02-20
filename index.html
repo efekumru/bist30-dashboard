@@ -85,7 +85,7 @@
 
     .list-header {
       display: grid;
-      grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
       padding: 10px 20px; font-size: 11px; color: var(--muted);
       letter-spacing: 0.8px; text-transform: uppercase;
       border-bottom: 1px solid var(--border); margin-bottom: 4px;
@@ -93,7 +93,7 @@
 
     .stock-row {
       display: grid;
-      grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
       align-items: center; padding: 16px 20px;
       border-bottom: 1px solid var(--dim); border-radius: 8px;
       transition: background .12s;
@@ -164,7 +164,7 @@
 <body>
 
 <nav>
-  <div class="nav-logo">bist<span>30</span>.dev</div>
+  <div class="nav-logo"></div>
   <div class="nav-tag">Canlı Sinyal</div>
 </nav>
 
@@ -202,7 +202,6 @@
     <span>Sinyal</span>
     <span class="h-wave">Wave Değeri</span>
     <span>Eğim</span>
-    <span class="h-sharpe">Sharpe</span>
   </div>
   <div id="listBody">
     <div class="empty">Veriler yükleniyor…</div>
@@ -267,8 +266,6 @@ function render() {
     const wave  = parseFloat(r.Wave);
     const pct   = isNaN(wave) ? 50 : Math.min(Math.max((wave + 10) / 20 * 100, 0), 100);
     const wColor = wave < 0 ? 'var(--green)' : wave > 0 ? 'var(--red)' : 'var(--yellow)';
-    const sharpe = parseFloat(r.Sharpe);
-    const sClass = isNaN(sharpe) ? 'na' : sharpe >= 1.5 ? 'pos' : sharpe < 0.5 ? 'neg' : '';
     const sym = (r.Symbol||'').replace('.IS','');
 
     return `
@@ -283,7 +280,6 @@ function render() {
         <div class="wave-track"><div class="wave-fill" style="width:${pct}%;background:${wColor}"></div></div>
       </div>
       <div>${slopeBlock(r.Slope)}</div>
-      <div class="col-sharpe"><span class="metric ${sClass}">${isNaN(sharpe) ? '—' : fNum(r.Sharpe, 2)}</span></div>
     </div>`;
   }).join('');
 }
