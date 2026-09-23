@@ -70,12 +70,21 @@
     tbody tr:hover { background: rgba(255,255,255,.015); }
     td { padding: 13px 10px; font-size: 12px; }
 
-    .td-sym  { font-weight: 700; color: #fff; font-size: 13px; }
-    .td-gun  { color: var(--muted); font-size: 11px; }
-    .td-sig  { font-weight: 600; font-size: 12px; letter-spacing: 0.5px; }
+    .td-sym   { font-weight: 700; color: #fff; font-size: 13px; }
+    .td-close { color: var(--muted); font-size: 11px; }
+    .td-sig   { font-weight: 600; font-size: 12px; letter-spacing: 0.5px; }
     .td-sig.long  { color: var(--green); }
     .td-sig.short { color: var(--red);   }
     .td-sig.neu   { color: var(--muted); }
+
+    .algo-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .algo-badge {
+      font-size: 9px; font-weight: 600; letter-spacing: 0.3px;
+      padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border2);
+    }
+    .algo-badge.up   { color: var(--green); border-color: rgba(52,211,153,.35); }
+    .algo-badge.down { color: var(--red);   border-color: rgba(248,113,113,.35); }
+    .algo-badge.dim  { color: var(--muted); opacity: .45; }
 
     .empty-row td { text-align: center; padding: 48px; color: var(--muted); font-size: 11px; }
     @keyframes fadeIn { from{opacity:0;transform:translateY(3px)} to{opacity:1;transform:none} }
@@ -120,7 +129,7 @@
     <span class="s-val muted" id="cntNone">—</span>
   </div>
   <div class="s-sep"></div>
-  <span class="s-sub" id="sigGun">—</span>
+  <span class="s-sub">Only models with ≥52% walk-forward accuracy count toward each signal</span>
 </div>
 
 <div class="table-section">
@@ -134,20 +143,34 @@
     <thead>
       <tr>
         <th>Stock</th>
-        <th class="hide-mob">Date</th>
+        <th class="hide-mob">Close</th>
         <th>Signal</th>
+        <th class="hide-mob">Models</th>
       </tr>
     </thead>
     <tbody id="tableBody">
-      <tr class="empty-row"><td colspan="3">Loading...</td></tr>
+      <tr class="empty-row"><td colspan="4">Loading...</td></tr>
     </tbody>
   </table>
 </div>
 
 <script>
-const CSV_URL = './data/bist30_fisher_151617_sinyal.csv';
+const CSV_URL = './data/bist30_tahmin.csv';
 const INDEX_URL = './data/xu030_tahmin.json';
 let allRows = [], activeFilter = 'ALL';
+
+// Same 52% walk-forward-accuracy bar the Python side (BASARI_ESIGI in main.py)
+// uses to decide which models' votes count toward Karar/OyOrani. Shown here
+// only to grey out a model's badge when it didn't clear that bar — the vote
+// itself was already excluded server-side, this just makes it visible.
+const MODEL_SKILL_THRESHOLD = 52;
+const ALGOS = [
+  { key: 'LogisticRegression', label: 'LR'   },
+  { key: 'KNN',                label: 'KNN'  },
+  { key: 'DecisionTree',       label: 'DT'   },
+  { key: 'XGBoost',            label: 'XGB'  },
+  { key: 'LightGBM',           label: 'LGBM' },
+];
 
 function parseCSV(text) {
   const lines = text.trim().split('\n');
@@ -160,48 +183,59 @@ function parseCSV(text) {
   });
 }
 
-function sigClass(sinyal) {
-  const s = (sinyal || '').toUpperCase();
-  if (s === 'LONG')  return 'long';
-  if (s === 'SHORT') return 'short';
-  return 'neu';
-}
-
-function render() {
-  let rows = [...allRows];
-
-  if (activeFilter === 'LONG')       rows = rows.filter(r => r.Sinyal === 'LONG');
-  else if (activeFilter === 'SHORT') rows = rows.filter(r => r.Sinyal === 'SHORT');
-  else rows = rows.filter(r => r.Sinyal === 'LONG' || r.Sinyal === 'SHORT');
-
-  const tbody = document.getElementById('tableBody');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No signals found.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = rows.map((r, i) => {
-    const cls  = sigClass(r.Sinyal);
-    const text = r.Sinyal || '—';
-    return `<tr style="animation:fadeIn .18s ${i * 8}ms both">
-      <td class="td-sym">${r.Hisse || '—'}</td>
-      <td class="td-gun hide-mob">${r.Gun || '—'}</td>
-      <td class="td-sig ${cls}">${text}</td>
-    </tr>`;
-  }).join('');
-}
-
-// The model's own decision string ("karar") already applies the 0.55 / 0.45
-// confidence threshold (see GUVEN_ESIGI in main.py) before ever calling a
-// direction — anything short of that bar comes back as NEUTRAL. So mapping
-// UP -> LONG, DOWN -> SHORT and NEUTRAL -> PASS here doesn't add a new
-// threshold, it just relabels the same decision to match the stock table.
-function indexSignal(karar) {
+// The model's own decision string ("Karar"/"karar") already applies the
+// 0.55 / 0.45 confidence threshold (see GUVEN_ESIGI in main.py) before ever
+// calling a direction — anything short of that bar comes back as NEUTRAL.
+// Mapping UP -> LONG, DOWN -> SHORT and NEUTRAL -> PASS here doesn't add a
+// new threshold, it just relabels the same decision to match this table.
+function mapSignal(karar) {
   const k = (karar || '').toUpperCase();
   if (k.includes('NEUTRAL')) return { text: 'PASS',  cls: 'neu' };
   if (k.includes('UP'))      return { text: 'LONG',  cls: 'up'  };
   if (k.includes('DOWN'))    return { text: 'SHORT', cls: 'down' };
   return { text: '—', cls: 'na' };
+}
+
+function algoBadges(row) {
+  return ALGOS.map(a => {
+    const yon   = row[a.key + '_yon'];
+    const cvAcc = parseFloat(row[a.key + '_cv_acc']);
+    // "_guven" is the model's own confidence in whichever direction it picked
+    // (p_up if it voted UP, 100 - p_up if it voted DOWN) — already computed
+    // server-side, not recalculated here.
+    const guven = parseFloat(row[a.key + '_guven']);
+    if (yon === undefined || yon === '') return '';
+    const skilled = !isNaN(cvAcc) && cvAcc >= MODEL_SKILL_THRESHOLD;
+    const dir = yon === '1' ? 'UP' : 'DOWN';
+    const cls = skilled ? (dir === 'UP' ? 'up' : 'down') : 'dim';
+    const acc = isNaN(cvAcc) ? '—' : cvAcc.toFixed(1) + '%';
+    const prob = isNaN(guven) ? '—' : guven.toFixed(0) + '%';
+    return `<span class="algo-badge ${cls}" title="${a.key}: ${dir}, ${prob} probability, ${acc} CV accuracy${skilled ? '' : ' (below 52% bar, not counted)'}">${a.label} ${prob}</span>`;
+  }).join('');
+}
+
+function render() {
+  let rows = allRows.map(r => ({ ...r, _sig: mapSignal(r.Karar) }));
+
+  if (activeFilter === 'LONG')       rows = rows.filter(r => r._sig.text === 'LONG');
+  else if (activeFilter === 'SHORT') rows = rows.filter(r => r._sig.text === 'SHORT');
+  else rows = rows.filter(r => r._sig.text === 'LONG' || r._sig.text === 'SHORT');
+
+  const tbody = document.getElementById('tableBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No signals found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((r, i) => {
+    const close = parseFloat(r.Kapanis);
+    return `<tr style="animation:fadeIn .18s ${i * 8}ms both">
+      <td class="td-sym">${r.Hisse || '—'}</td>
+      <td class="td-close hide-mob">${isNaN(close) ? '—' : close.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+      <td class="td-sig ${r._sig.cls}">${r._sig.text}</td>
+      <td class="hide-mob"><div class="algo-row">${algoBadges(r)}</div></td>
+    </tr>`;
+  }).join('');
 }
 
 async function loadIndexForecast() {
@@ -210,7 +244,7 @@ async function loadIndexForecast() {
     if (!res.ok) throw new Error();
     const d = await res.json();
 
-    const sig = indexSignal(d.karar);
+    const sig = mapSignal(d.karar);
     document.getElementById('idxClose').textContent = d.close != null
       ? d.close.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       : '—';
@@ -231,16 +265,10 @@ async function load() {
     if (!res.ok) throw new Error();
     allRows = parseCSV(await res.text());
 
-    const longlar  = allRows.filter(r => r.Sinyal === 'LONG').length;
-    const shortlar = allRows.filter(r => r.Sinyal === 'SHORT').length;
-    const none     = allRows.filter(r => r.Sinyal === '-' || !r.Sinyal).length;
-
-    document.getElementById('cntLong').textContent  = longlar;
-    document.getElementById('cntShort').textContent = shortlar;
-    document.getElementById('cntNone').textContent  = none;
-
-    const ilkGun = allRows.find(r => r.Gun)?.Gun || '—';
-    document.getElementById('sigGun').textContent = 'Signal date: ' + ilkGun;
+    const sigs = allRows.map(r => mapSignal(r.Karar).text);
+    document.getElementById('cntLong').textContent  = sigs.filter(s => s === 'LONG').length;
+    document.getElementById('cntShort').textContent = sigs.filter(s => s === 'SHORT').length;
+    document.getElementById('cntNone').textContent  = sigs.filter(s => s === 'PASS').length;
 
     const ts = new Date().toLocaleString('en-GB', {
       day: '2-digit', month: '2-digit', year: 'numeric',
@@ -252,7 +280,7 @@ async function load() {
     render();
   } catch {
     document.getElementById('tableBody').innerHTML =
-      '<tr class="empty-row"><td colspan="3">data/ folder missing — run the Colab notebook</td></tr>';
+      '<tr class="empty-row"><td colspan="4">data/ folder missing — run the Colab notebook</td></tr>';
   }
 }
 
