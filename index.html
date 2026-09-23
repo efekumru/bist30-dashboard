@@ -35,20 +35,7 @@
     .idx-decision.down { color: var(--red); }
     .idx-decision.neu  { color: var(--yellow); }
     .idx-decision.na   { color: var(--muted); }
-    .idx-sub { font-size: 10px; color: var(--muted); margin-bottom: 20px; letter-spacing: 0.5px; }
-
-    .idx-row2 { display: flex; align-items: center; flex-wrap: wrap; }
-    .idx-block {
-      display: flex; align-items: center; gap: 10px;
-      padding-right: 28px; margin-right: 28px;
-      border-right: 1px solid var(--border);
-    }
-    .idx-block:last-child { border-right: none; margin-right: 0; padding-right: 0; }
-    .idx-label { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-right: 4px; }
-    .idx-val { font-size: 11px; font-weight: 600; }
-    .idx-val.up   { color: var(--green); }
-    .idx-val.down { color: var(--red); }
-    .idx-val.na   { color: var(--muted); }
+    .idx-sub { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; }
 
     .summary {
       padding: 28px 44px 24px;
@@ -115,24 +102,6 @@
     <span class="idx-decision" id="idxDecision">—</span>
   </div>
   <div class="idx-sub" id="idxDate">—</div>
-  <div class="idx-row2">
-    <div class="idx-block">
-      <span class="idx-label">Confidence</span>
-      <span class="idx-val" id="idxConfidence">—</span>
-    </div>
-    <div class="idx-block">
-      <span class="idx-label">CV Accuracy</span>
-      <span class="idx-val" id="idxAcc">—</span>
-    </div>
-    <div class="idx-block">
-      <span class="idx-label">Selective Accuracy</span>
-      <span class="idx-val" id="idxSelAcc">—</span>
-    </div>
-    <div class="idx-block">
-      <span class="idx-label">Coverage</span>
-      <span class="idx-val" id="idxCoverage">—</span>
-    </div>
-  </div>
 </div>
 
 <div class="summary">
@@ -222,11 +191,17 @@ function render() {
   }).join('');
 }
 
-function decisionClass(karar) {
+// The model's own decision string ("karar") already applies the 0.55 / 0.45
+// confidence threshold (see GUVEN_ESIGI in main.py) before ever calling a
+// direction — anything short of that bar comes back as NEUTRAL. So mapping
+// UP -> LONG, DOWN -> SHORT and NEUTRAL -> PASS here doesn't add a new
+// threshold, it just relabels the same decision to match the stock table.
+function indexSignal(karar) {
   const k = (karar || '').toUpperCase();
-  if (k.includes('UP'))   return 'up';
-  if (k.includes('DOWN')) return 'down';
-  return 'neu';
+  if (k.includes('NEUTRAL')) return { text: 'PASS',  cls: 'neu' };
+  if (k.includes('UP'))      return { text: 'LONG',  cls: 'up'  };
+  if (k.includes('DOWN'))    return { text: 'SHORT', cls: 'down' };
+  return { text: '—', cls: 'na' };
 }
 
 async function loadIndexForecast() {
@@ -235,25 +210,14 @@ async function loadIndexForecast() {
     if (!res.ok) throw new Error();
     const d = await res.json();
 
-    const cls = decisionClass(d.karar);
+    const sig = indexSignal(d.karar);
     document.getElementById('idxClose').textContent = d.close != null
       ? d.close.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       : '—';
     const decisionEl = document.getElementById('idxDecision');
-    decisionEl.textContent = d.karar || '—';
-    decisionEl.className = 'idx-decision ' + cls;
+    decisionEl.textContent = sig.text;
+    decisionEl.className = 'idx-decision ' + sig.cls;
     document.getElementById('idxDate').textContent = d.tarih ? 'As of ' + d.tarih : '—';
-
-    const confEl = document.getElementById('idxConfidence');
-    confEl.textContent = d.model_guven != null ? d.model_guven.toFixed(1) + '%' : '—';
-    confEl.className = 'idx-val ' + cls;
-
-    document.getElementById('idxAcc').textContent =
-      d.ensemble_cv_acc != null ? d.ensemble_cv_acc.toFixed(1) + '%' : '—';
-    document.getElementById('idxSelAcc').textContent =
-      d.ensemble_secici_cv_acc != null ? d.ensemble_secici_cv_acc.toFixed(1) + '%' : '—';
-    document.getElementById('idxCoverage').textContent =
-      d.ensemble_kapsam != null ? d.ensemble_kapsam.toFixed(1) + '%' : '—';
   } catch {
     const decisionEl = document.getElementById('idxDecision');
     decisionEl.textContent = '—';
